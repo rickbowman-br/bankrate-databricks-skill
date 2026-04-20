@@ -1,0 +1,12 @@
+# Test files
+test/
+*.test.md
+
+# Personal notes
+notes.md
+scratch.md
+
+# Credentials (should never be here anyway)
+.env
+*.token
+.databrickscfg

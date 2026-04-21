@@ -1,3 +1,11 @@
+# ⚠️ DEPRECATED - See [bankrate-skills](https://github.com/bankrate-prototypes/bankrate-skills)
+
+> **This repository has been consolidated into the [bankrate-skills](https://github.com/bankrate-prototypes/bankrate-skills) shared repository.**
+> **New location:** `bankrate-databricks` skill in https://github.com/bankrate-prototypes/bankrate-skills
+> **See [DEPRECATED.md](DEPRECATED.md) for migration instructions.**
+
+---
+
 # Bankrate Databricks Analytics Skill
 
 A collaborative Claude Code skill for querying and analyzing Bankrate's Databricks data warehouse.

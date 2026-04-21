@@ -47,6 +47,8 @@ LIMIT 10
 ### Revenue by Vertical
 When asked for "revenue", "conversions by vertical", or "vertical performance":
 
+**IMPORTANT**: Always filter out zero-revenue conversions (`c_actualrevenue > 0`) to get accurate bounty rates. The table includes unpaid/rejected leads that skew averages.
+
 ```sql
 SELECT
   c_vertical,
@@ -55,6 +57,7 @@ SELECT
   sum(c_actualrevenue) / count(*) as avg_revenue_per_conversion
 FROM bankrate_prod.br_rpt.conversions_core
 WHERE c_sentat::date >= DATEADD(day, -7, CURRENT_DATE)
+  AND c_actualrevenue > 0
 GROUP BY 1
 ORDER BY 2 DESC
 ```
@@ -135,19 +138,67 @@ WHERE form_summary.formname = 'Cobrand'
 GROUP BY ALL
 ```
 
+### Traffic Source Analysis
+When asked for "paid vs organic", "traffic source performance", or "channel attribution":
+
+```sql
+-- High-level: Paid vs Earned
+SELECT
+  sf.traffic_source_level_one,
+  COUNT(DISTINCT cc.conversions_core_pk) as conversion_count,
+  SUM(cc.c_actualrevenue) as total_revenue,
+  AVG(cc.c_actualrevenue) as avg_revenue
+FROM bankrate_prod.br_rpt.conversions_core cc
+INNER JOIN bankrate_prod.br_rpt.session_fact sf
+  ON cc.c_session_id = sf.sessionid
+WHERE cc.c_vertical = 'mortgage'
+  AND cc.c_actualrevenue > 0
+  AND cc.c_sentat::date >= DATEADD(day, -7, CURRENT_DATE)
+GROUP BY 1
+ORDER BY 3 DESC
+```
+
+```sql
+-- Detailed: Traffic sub-channels
+SELECT
+  sf.traffic_source_level_one,
+  sf.traffic_source_level_two,
+  COUNT(DISTINCT cc.conversions_core_pk) as conversion_count,
+  SUM(cc.c_actualrevenue) as total_revenue,
+  AVG(cc.c_actualrevenue) as avg_revenue
+FROM bankrate_prod.br_rpt.conversions_core cc
+INNER JOIN bankrate_prod.br_rpt.session_fact sf
+  ON cc.c_session_id = sf.sessionid
+WHERE cc.c_vertical = 'mortgage'
+  AND cc.c_actualrevenue > 0
+  AND cc.c_sentat::date >= DATEADD(day, -7, CURRENT_DATE)
+GROUP BY 1, 2
+ORDER BY 1, 3 DESC
+```
+
 ## Tables Reference
 
 ### Traffic Tables
 - `pageview_fact` - Individual page views (use `instanceid` for distinct counts)
-- `session_fact` - User sessions (includes `devicetype`, `return_visitor`)
+- `session_fact` - User sessions with traffic attribution
+  - **Traffic Source Fields**:
+    - `traffic_source_level_one` - High-level: "Paid" or "Earned"
+    - `traffic_source_level_two` - Sub-channel: "SEO", "Direct", "Paid Search", "Partner", "Email", "Referral", etc.
+    - `traffic_source_level_three` - Detailed attribution
+    - `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` - UTM parameters
+    - `firstpagereferrerdomain`, `lastpagereferrerdomain` - Referrer tracking
+  - **Other Fields**: `devicetype`, `return_visitor`, `sessionid` (join key)
 
 ### Form Tables
 - `form_summary` - Form metadata (join via `FORMID` or `sessionid`)
 - `form_step` - Step-by-step funnel data
 - `form_field` - Field values (use PIVOT pattern with MAX/CASE)
+  - **Available Fields**: creditScore, employmentStatus, purchaseStage, combinedAnnualIncome, propertyPurchasePrice, downPaymentPercent, propertyType, propertyUse, declarationBankrupt, firstName, lastName, email, phone, zipCode
 
 ### Conversion Tables
 - `conversions_core` - Revenue and conversion events by vertical
+  - **Key Fields**: `c_session_id` (join to session_fact), `c_vertical`, `c_actualrevenue`, `c_sentat`
+  - **Important**: ~59% of conversions have $0 revenue - always filter `c_actualrevenue > 0` for bounty analysis
 
 ### Interaction Tables
 - `element_fact` - Button/link click tracking
@@ -169,6 +220,39 @@ GROUP BY ALL
 - For long queries, increase `wait_timeout` if needed
 - Always use `DISTINCT instanceid` for pageview counts
 - Always use `DISTINCT sessionid` for session counts
+- **Always filter `c_actualrevenue > 0` for revenue queries** - ~59% of mortgage conversions and similar percentages in other verticals have $0 revenue (unpaid/rejected leads). Including them skews averages significantly (e.g., mortgage drops from $78 to $32)
+
+### Common Join Patterns
+
+**Conversions + Traffic Source**:
+```sql
+FROM conversions_core cc
+INNER JOIN session_fact sf ON cc.c_session_id = sf.sessionid
+```
+
+**Conversions + Form Data**:
+```sql
+FROM conversions_core cc
+INNER JOIN form_summary fs ON cc.c_session_id = fs.sessionid
+LEFT JOIN form_field ff ON fs.formid = ff.formid
+-- Use MAX(CASE WHEN ff.fieldname = 'creditScore' THEN ff.fieldvalue END) to pivot
+```
+
+**Sessions + Page Views**:
+```sql
+FROM session_fact sf
+LEFT JOIN pageview_fact pv ON sf.sessionid = pv.sessionid
+```
+
+### Traffic Source Values
+
+**traffic_source_level_one**:
+- `Paid` - All paid traffic (search, partner, display)
+- `Earned` - Organic traffic (SEO, direct, referral, email)
+
+**traffic_source_level_two** (common values):
+- Earned: `SEO`, `Direct`, `Referral`, `Email`, `Internal`
+- Paid: `Paid Search`, `Partner`, `Paid Other`
 
 ## Contributing
 
